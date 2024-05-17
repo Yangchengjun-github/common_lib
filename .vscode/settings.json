@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.c": "c",
+        "key.h": "c",
+        "bat.h": "c",
+        "define.h": "c",
+        "main.h": "c",
+        "string.h": "c",
+        "led.h": "c"
+    }
+}
