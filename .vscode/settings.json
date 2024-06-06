@@ -6,6 +6,7 @@
         "define.h": "c",
         "main.h": "c",
         "string.h": "c",
-        "led.h": "c"
+        "led.h": "c",
+        "zero.h": "c"
     }
 }
