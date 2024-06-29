@@ -14,9 +14,9 @@ void zero_init(void)
     stPtc.GridZeroCnt = 0;
     stPtc.GridZeroTh = sizeof(stPtc.HeatWave) * 8; // 输出分辨率16位
     stPtc.GridTrigOnTh = 5000 / TIME_FUN_CALL_US;  // stPtc.GridTrigOnTh * TIME_FUN_CALL_US  = 5ms 半波周期 这里驱动时长为半个周期
-    stPtc.HeatWave = 0;
-    stPtc.stage[A] = STAGE_OUTPUT_DIS;
-    stPtc.stage[B] = STAGE_OUTPUT_DIS;
+    stPtc.HeatWave = 0xF0F0;   //
+    stPtc.contorlStage[A] = STAGE_OUTPUT_DIS;
+    stPtc.contorlStage[B] = STAGE_OUTPUT_DIS;
     stPtc.Delay[A] = 0;
     stPtc.Delay[B] = 0;
     stPtc.GridTrigEnCnt[A] = 0;
@@ -32,6 +32,7 @@ void zero_init(void)
 void zero_contorl(sPtcCtrl_t *s)
 {
     s->GridZero1 = ZERO_VAL;  //本次检测IO电平值
+    char type = A;
 
     /* ---------------------------------- 过零判断 ---------------------------------- */
     if ((s->GridZero0 == LOW && s->GridZero1 == HIGH)) // A类型过零 
@@ -42,8 +43,16 @@ void zero_contorl(sPtcCtrl_t *s)
 
         if ((s->HeatWave << s->GridZeroCnt) & 0x8000)
         {
-            s->stage[A] = STAGE_COMPENSATE;
+#if COMPENSATE
+            s->contorlStage[A] = STAGE_COMPENSATE;
+            s->Delay[A] = 0;
+#else
+            s->GridTrigEnCnt[A] = 0;
+            s->contorlStage[A] = STAGE_OUTPUT_EN;
+
+#endif
         }
+
     }
 
     if ((s->GridZero0 == HIGH && s->GridZero1 == LOW)) // B类型过零 
@@ -54,52 +63,62 @@ void zero_contorl(sPtcCtrl_t *s)
 
         if ((s->HeatWave << s->GridZeroCnt) & 0x8000)
         {
-            s->stage[B] = STAGE_COMPENSATE;
+#if COMPENSATE
+            s->contorlStage[B] = STAGE_COMPENSATE;
+            s->Delay[B] = 0;
+#else
+            s->GridTrigEnCnt[B] = 0;
+            s->contorlStage[B] = STAGE_OUTPUT_EN;
+
+#endif
         }
+
     }
 
-    for (char i = A; i <= B; i++)
+    for (type = A; type <= B; type++)
     {
-        switch (s->stage[i])
+
+        switch (s->contorlStage[type])
         {
         case STAGE_OUTPUT_DIS:
-            PTC_CTR_OFF;
+            s->Out[type] = 0;
             break;
         case STAGE_COMPENSATE:
-#if COMPENSATE
-            s->Delay[i]++;
-            if (s->Delay[i] > (i == A ? (PERIOD_HALF_WAVE + CAL_A):(PERIOD_HALF_WAVE + CAL_B))) 
+
+            s->Delay[type]++;
+
+            if (s->Delay[type] > (type == A ? (PERIOD_HALF_WAVE + CAL_A) : (PERIOD_HALF_WAVE + CAL_B)))
             {
-                s->Delay[i] = 0;
-                s->GridTrigEnCnt[i] = 0;
-                s->stage[i] = STAGE_OUTPUT_EN;
+                s->Delay[type] = 0;
+                s->GridTrigEnCnt[type] = 0;
+                s->contorlStage[type] = STAGE_OUTPUT_EN;
             }
-#else
-            s->stage[i] = STAGE_OUTPUT_EN;
-#endif
+
             break;
         case STAGE_OUTPUT_EN:
-            PTC_CTR_ONN;
-            s->GridTrigEnCnt[i]++;
-            if (s->GridTrigEnCnt[i] > s->GridTrigOnTh)
+            s->Out[type] = 1;
+            s->GridTrigEnCnt[type]++;
+
+            if (s->GridTrigEnCnt[type] > s->GridTrigOnTh)
             {
-                s->stage[i] = STAGE_OUTPUT_DIS;
+                s->contorlStage[type] = STAGE_OUTPUT_DIS;
             }
             break;
 
         default:
+
             break;
         }
     }
-    s->GridZero0 = s->GridZero1;  //记录这次的电平值，用于下次过零判断
+        s->GridZero0 = s->GridZero1; // 记录这次的电平值，用于下次过零判断
+        if(s->Out[A] || s->Out[B])
+        {
+            PTC_CTR_ONN;
+        }
+        else
+        {
+            PTC_CTR_OFF;
+        }
 }
 
-/**
- * @brief 此为控制发热的参考函数
- *
- * @details
- */
-void heat_test(void)
-{
-    stPtc.HeatWave = 0x5555; // 0101 0101 0101 0101 波形将会和这16bit一样 1：输出 0：不输出
-}
+
